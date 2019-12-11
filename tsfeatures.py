@@ -8,6 +8,13 @@ import hurst
 from math import log, e
 # import pyrem
 from collections import Counter
+from rpy2.robjects import r, pandas2ri, FloatVector
+from rpy2.robjects import IntVector, Formula, packages
+from rpy2.robjects.packages import importr
+
+stats = packages.importr('stats')
+tseries = packages.importr('tseries')
+pandas2ri.activate()
 
 from arch import arch_model
 from entropy import spectral_entropy, perm_entropy, svd_entropy, app_entropy, sample_entropy, lziv_complexity
@@ -147,8 +154,8 @@ def crossing_points(x):
     not_p2 = np.logical_not(p2)
     a = np.logical_and(p1, not_p2)
     b = np.logical_and(p2, not_p1)
-    cross = np.logical_or(a, b)
-    return sum(cross)
+    crossingpoints = sum(np.logical_or(a, b))
+    return crossingpoints
 # print(entropy(ts['close']))
 # print(entropy4(ts['close'], normalize=True))
 
@@ -158,7 +165,8 @@ def flat_spots(x):
         return max(sum(1 for _ in l) for n, l in itertools.groupby(lst))
 
     cutx = np.array(pd.cut(x, bins=10, labels=[i for i in range(10)]))
-    return run_lengths(cutx)
+    flatspots = run_lengths(cutx)
+    return flatspots
 
 def kpss(x):
     return statsmodels.tsa.stattools.kpss(x)[0]
@@ -175,30 +183,24 @@ def hurst_coeff(x):
 import pyper
 from pyper import *
 
+
+def arch_stat(x, lags=12, demean=True):
+    if demean:
+        x = x - np.mean(x)
+    embed = r['embed']
+    mat = embed(FloatVector(x ** 2), lags + 1)
+    base = importr('base')
+    fmla = Formula('y ~ x')
+    env = fmla.environment
+    env['x'] = mat[:, 1:]
+    env['y'] = mat[:, 0]
+    fit = stats.lm(fmla)
+    modsum = base.summary(fit)
+    rsquared = modsum.rx2('r.squared')
+    arch_lm = rsquared
+    return arch_lm
+
 def heterogeneity(x):
-    from rpy2.robjects import r, pandas2ri, FloatVector
-    from rpy2.robjects import IntVector, Formula, packages
-    from rpy2.robjects.packages import importr
-    stats = packages.importr('stats')
-    tseries = packages.importr('tseries')
-    pandas2ri.activate()
-
-    def arch_stat(x, lags=12, demean=True):
-        if demean:
-            x = x - np.mean(x)
-        embed = r['embed']
-        mat = embed(FloatVector(x**2), lags+1)
-        base = importr('base')
-        fmla = Formula('y ~ x')
-        env = fmla.environment
-        env['x'] = mat[:,1:]
-        env['y'] = mat[:,0]
-        fit = stats.lm(fmla)
-        modsum = base.summary(fit)
-        rsquared = modsum.rx2('r.squared')
-        arch_lm = rsquared
-        return arch_lm
-
     x_archtest = arch_stat(x)
     arch_r2 = x_archtest[0]
     LBstat = sum(sm.tsa.stattools.acf(x**2, nlags=12, missing='none')[1:]**2)
