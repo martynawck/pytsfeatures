@@ -171,9 +171,8 @@ def pp(x):
     return p._stat_rho + p._stat_tau
 
 def hurst_coeff(x):
-    h, C, data = hurst.compute_Hc(x, d = 0.5)
-    print(h)
-
+    h, C, data = hurst.compute_Hc(x)
+    return h + 0.5
 
 import pyper
 from pyper import *
@@ -210,7 +209,10 @@ def heterogeneity(x):
 
 def stl_features(x):
     import statsmodels.api as sm
-
+    def poly(x, p):
+        x = np.array(x)
+        X = np.transpose(np.vstack((x ** k for k in range(p + 1))))
+        return np.linalg.qr(X)[0][:, 1:]
     # dta = sm.datasets.co2.load_pandas().data
     # deal with missing values. see issue
     # dta.co2.interpolate(inplace=True)
@@ -219,16 +221,41 @@ def stl_features(x):
     trend, spike, linearity, curvature, e_acf1, e_acf10 = 0, 0, 0, 0, 0, 0
     msts = 0
     nperiods = 0
+    stlfit = forecast.mstl(x)
     # stlfit = sm.tsa.seasonal_decompose(x, freq=1, model='additive')
-    trend0 = stlfit.trend
-    remainder = stlfit.resid
-    seasonal = stlfit.seasonal
-    print('trend')
-    print(result.trend)
-    print(result.seasonal)
-    # print(result.resid)
-    # print(result.observed)
-# def nonlinearity(x):
-#     x2 = tseries.terasvirta_test(myasts.myasts(x), type = "Chisq")
-#     return 10 * x2 / len(x)
-print(stl_features(ts['close']))
+    trend0 = stlfit[:,1]
+    remainder = stlfit[:,2]
+    detrend = x - trend0
+    deseason = x
+    fits = x - remainder
+    n = len(x)
+    varx = np.var(x)
+    vare = np.var(remainder)
+    vardetrend = np.var(detrend)
+    vardeseason = np.var(deseason)
+
+    if (vardeseason / varx < 1e-10):
+        trend = 0
+    else:
+        trend = max(0, min(1,1 - vare / vardeseason))
+
+    d = (remainder - np.mean(remainder))**2
+    varloo = (vare * (n-1) - d) / (n - 2)
+    spike = np.var(varloo)
+    e_acf1, e_acf10, _ , _, _, _ = acf_features(pd.DataFrame(data=remainder.flatten()))
+
+    fmla = Formula('y ~ x')
+    env = fmla.environment
+    #poly = r['poly']
+    seq = r['seq']
+    seqn = seq(n)
+    env['x'] = poly(seqn, 2)
+    env['y'] = trend0
+    fit = stats.lm(fmla)
+    coef = r['coef']
+    fit = coef(fit)
+    linearity = fit[0]
+    curvature = fit[1]
+    return trend, spike, e_acf1, e_acf10, linearity, curvature
+
+print(hurst_coeff(ts['close']))
