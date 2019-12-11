@@ -14,6 +14,13 @@ from rpy2.robjects.packages import importr
 
 stats = packages.importr('stats')
 tseries = packages.importr('tseries')
+forecast = packages.importr('forecast')
+base = importr('base')
+# _as = importr('as.ts')
+from rpy2.robjects.packages import STAP
+mfunc = 'myasts <- function(dobj){return(as.ts(dobj))}'
+myasts = STAP(mfunc, "myasts")
+# np.array(myasmatrix.myasmatrix(rres))
 pandas2ri.activate()
 
 from arch import arch_model
@@ -83,20 +90,7 @@ def holt_parameters(x):
     alpha, beta = ets_fit.params['smoothing_level'], ets_fit.params['smoothing_slope']
     return alpha, beta
 
-def stl_features(x):
-    import statsmodels.api as sm
 
-    # dta = sm.datasets.co2.load_pandas().data
-    # deal with missing values. see issue
-    # dta.co2.interpolate(inplace=True)
-    #t = pd.DataFrame(x)
-    # print(x.close)
-    result = sm.tsa.seasonal_decompose(x.close, freq=1, model='additive')
-    print('trend')
-    print(result.trend)
-    print(result.seasonal)
-    # print(result.resid)
-    # print(result.observed)
 
 def entropy4(x, normalize = False, base=None):
 
@@ -121,7 +115,6 @@ def scale_ts(x):
     std = np.std(x)
     mean = np.mean(x)
     x = (x - mean) / std
-    print()
     return x
 
 def lumpiness(x):
@@ -131,7 +124,8 @@ def lumpiness(x):
     lo = [i for i in range(0, nr, width)]
     up = [i for i in range(width, nr + width, width)]
     varx = [np.var(x[lo[idx]:up[idx]]) for idx in [i for i in range(0, int(nr / width))]]
-    return np.var(varx)
+    _lumpiness = np.var(varx)
+    return _lumpiness
 
 def stability(x):
     width = 10
@@ -140,7 +134,8 @@ def stability(x):
     lo = [i for i in range(0, nr, width)]
     up = [i for i in range(width, nr + width, width)]
     meanx = [np.mean(x[lo[idx]:up[idx]]) for idx in [i for i in range(0, int(nr / width))]]
-    return np.var(meanx)
+    _stability = np.var(meanx)
+    return _stability
 
 def crossing_points(x):
     midline = np.median(x)
@@ -189,7 +184,6 @@ def arch_stat(x, lags=12, demean=True):
         x = x - np.mean(x)
     embed = r['embed']
     mat = embed(FloatVector(x ** 2), lags + 1)
-    base = importr('base')
     fmla = Formula('y ~ x')
     env = fmla.environment
     env['x'] = mat[:, 1:]
@@ -214,4 +208,27 @@ def heterogeneity(x):
     garch_acf = LBstat2
     return arch_acf, garch_acf, arch_r2, garch_r2
 
-print(heterogeneity(ts['close']))
+def stl_features(x):
+    import statsmodels.api as sm
+
+    # dta = sm.datasets.co2.load_pandas().data
+    # deal with missing values. see issue
+    # dta.co2.interpolate(inplace=True)
+    #t = pd.DataFrame(x)
+    # print(x.close)
+    trend, spike, linearity, curvature, e_acf1, e_acf10 = 0, 0, 0, 0, 0, 0
+    msts = 0
+    nperiods = 0
+    # stlfit = sm.tsa.seasonal_decompose(x, freq=1, model='additive')
+    trend0 = stlfit.trend
+    remainder = stlfit.resid
+    seasonal = stlfit.seasonal
+    print('trend')
+    print(result.trend)
+    print(result.seasonal)
+    # print(result.resid)
+    # print(result.observed)
+# def nonlinearity(x):
+#     x2 = tseries.terasvirta_test(myasts.myasts(x), type = "Chisq")
+#     return 10 * x2 / len(x)
+print(stl_features(ts['close']))
