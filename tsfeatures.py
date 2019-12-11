@@ -8,13 +8,15 @@ import hurst
 from math import log, e
 # import pyrem
 from collections import Counter
+
+from arch import arch_model
 from entropy import spectral_entropy, perm_entropy, svd_entropy, app_entropy, sample_entropy, lziv_complexity
 from arch.unitroot import PhillipsPerron
 # import fracdiff
 
 
 
-ts = pd.read_csv("./test_set.csv.csv")
+ts = pd.read_csv("./test_set.csv")
 ts.reset_index(inplace=True)
 ts['barTimestamp'] = pd.to_datetime(ts['barTimestamp'])
 ts = ts.set_index('barTimestamp')
@@ -166,22 +168,48 @@ def pp(x):
     return p._stat_rho + p._stat_tau
 
 def hurst_coeff(x):
-    h,C, data = hurst.compute_Hc(x, d=0.5)
+    h, C, data = hurst.compute_Hc(x, d = 0.5)
     print(h)
 
+
+import pyper
+from pyper import *
+
 def heterogeneity(x):
+    from rpy2.robjects import r, pandas2ri, FloatVector
+    from rpy2.robjects import IntVector, Formula, packages
+    from rpy2.robjects.packages import importr
+    stats = packages.importr('stats')
+    tseries = packages.importr('tseries')
+    pandas2ri.activate()
 
-    def embed(x, dimension = 1):
-        n = len(x)
-        m = n - dimension + 1
-        # data = x[1:m + ]
-        # return data
+    def arch_stat(x, lags=12, demean=True):
+        if demean:
+            x = x - np.mean(x)
+        embed = r['embed']
+        mat = embed(FloatVector(x**2), lags+1)
+        base = importr('base')
+        fmla = Formula('y ~ x')
+        env = fmla.environment
+        env['x'] = mat[:,1:]
+        env['y'] = mat[:,0]
+        fit = stats.lm(fmla)
+        modsum = base.summary(fit)
+        rsquared = modsum.rx2('r.squared')
+        arch_lm = rsquared
+        return arch_lm
 
-    def arch_stat(x, demean=True):
-        x = x - np.mean(x)
+    x_archtest = arch_stat(x)
+    arch_r2 = x_archtest[0]
+    LBstat = sum(sm.tsa.stattools.acf(x**2, nlags=12, missing='none')[1:]**2)
+    arch_acf = LBstat
+    garch_fit = tseries.garch(x, trace=False)
+    residuals = r['residuals']
+    garch_fit_std = residuals(garch_fit)[1:]
+    x_garch_archtest = arch_stat(garch_fit_std)
+    garch_r2 = x_garch_archtest[0]
+    LBstat2 = sum(sm.tsa.stattools.acf(garch_fit_std**2, nlags=12, missing='none')[1:]**2)
+    garch_acf = LBstat2
+    return arch_acf, garch_acf, arch_r2, garch_r2
 
-    x = np.array(x)
-    arch_acf, garch_acf, arch_r2, garch_r2 = 0, 0, 0, 0
-
-    return
-print(hurst_coeff(ts['close']))
+print(heterogeneity(ts['close']))
