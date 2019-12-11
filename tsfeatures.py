@@ -1,10 +1,25 @@
-import pandas as pd
-import statsmodels.api as sm
+import itertools
 
-ts = pd.read_csv("/home/martyna/sharedData/test2.csv")
+import pandas as pd
+import statsmodels
+import statsmodels.api as sm
+import numpy as np
+import hurst
+from math import log, e
+# import pyrem
+from collections import Counter
+from entropy import spectral_entropy, perm_entropy, svd_entropy, app_entropy, sample_entropy, lziv_complexity
+from arch.unitroot import PhillipsPerron
+# import fracdiff
+
+
+
+ts = pd.read_csv("./test_set.csv.csv")
 ts.reset_index(inplace=True)
 ts['barTimestamp'] = pd.to_datetime(ts['barTimestamp'])
 ts = ts.set_index('barTimestamp')
+#ts = ts['close']
+
 # ts = ts.set_index('barTimestamp')
 
 
@@ -42,6 +57,23 @@ def pacf_features(x):
 
     return x_pacf5, diff1x_pacf5, diff2x_pacf5
 
+#
+# holt_parameters <- function(x) {
+#   # parameter estimates of holt linear trend model
+#   fit <- forecast::ets(x, model = c("AAN"))
+#   params <- c(fit$par["alpha"], fit$par["beta"])
+#   names(params) <- c("alpha", "beta")
+#   return(params)
+# }
+
+def holt_parameters(x):
+    from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    print(x)
+    ets_model = ExponentialSmoothing(x, trend='add')#, seasonal='None')
+    ets_fit = ets_model.fit()
+    alpha, beta = ets_fit.params['smoothing_level'], ets_fit.params['smoothing_slope']
+    return alpha, beta
+
 def stl_features(x):
     import statsmodels.api as sm
 
@@ -57,4 +89,99 @@ def stl_features(x):
     # print(result.resid)
     # print(result.observed)
 
-print(stl_features(ts))
+def entropy4(x, normalize = False, base=None):
+
+    value, counts = np.unique(x, return_counts=True)
+    norm_counts = counts / counts.sum()
+    base = e if base is None else base
+    entr = -(norm_counts * np.log(norm_counts)/np.log(base)).sum()
+    if normalize is True:
+        entr /= np.log2(len(norm_counts))
+    print(entr)
+    entr += spectral_entropy(x, sf=len(x), method='fft', normalize=normalize)
+    return entr / 2
+
+
+def entropy(x):
+    print(x)
+    return spectral_entropy(x, sf=len(x), method='fft', normalize=True)
+# print(acf_features(ts['close']))
+# print(pacf_features(ts['close']))
+
+def scale_ts(x):
+    std = np.std(x)
+    mean = np.mean(x)
+    x = (x - mean) / std
+    print()
+    return x
+
+def lumpiness(x):
+    width = 10
+    x = scale_ts(x)
+    nr = len(x)
+    lo = [i for i in range(0, nr, width)]
+    up = [i for i in range(width, nr + width, width)]
+    varx = [np.var(x[lo[idx]:up[idx]]) for idx in [i for i in range(0, int(nr / width))]]
+    return np.var(varx)
+
+def stability(x):
+    width = 10
+    x = scale_ts(x)
+    nr = len(x)
+    lo = [i for i in range(0, nr, width)]
+    up = [i for i in range(width, nr + width, width)]
+    meanx = [np.mean(x[lo[idx]:up[idx]]) for idx in [i for i in range(0, int(nr / width))]]
+    return np.var(meanx)
+
+def crossing_points(x):
+    midline = np.median(x)
+    ab = x <= midline
+    lenx = len(x)
+    p1 = ab[0:lenx-1]
+    p2 = ab[1:lenx]
+    p1 = np.array(p1)
+    p2 = np.array(p2)
+    not_p1 = np.logical_not(p1)
+    not_p2 = np.logical_not(p2)
+    a = np.logical_and(p1, not_p2)
+    b = np.logical_and(p2, not_p1)
+    cross = np.logical_or(a, b)
+    return sum(cross)
+# print(entropy(ts['close']))
+# print(entropy4(ts['close'], normalize=True))
+
+
+def flat_spots(x):
+    def run_lengths(lst):
+        return max(sum(1 for _ in l) for n, l in itertools.groupby(lst))
+
+    cutx = np.array(pd.cut(x, bins=10, labels=[i for i in range(10)]))
+    return run_lengths(cutx)
+
+def kpss(x):
+    return statsmodels.tsa.stattools.kpss(x)[0]
+
+def pp(x):
+    p = PhillipsPerron(x)
+    return p._stat_rho + p._stat_tau
+
+def hurst_coeff(x):
+    h,C, data = hurst.compute_Hc(x, d=0.5)
+    print(h)
+
+def heterogeneity(x):
+
+    def embed(x, dimension = 1):
+        n = len(x)
+        m = n - dimension + 1
+        # data = x[1:m + ]
+        # return data
+
+    def arch_stat(x, demean=True):
+        x = x - np.mean(x)
+
+    x = np.array(x)
+    arch_acf, garch_acf, arch_r2, garch_r2 = 0, 0, 0, 0
+
+    return
+print(hurst_coeff(ts['close']))
