@@ -275,4 +275,75 @@ def stl_features(x):
     curvature = fit[0]
     return trend, spike, e_acf1, e_acf10, linearity, curvature
 
-print(pp(ts['close']))
+# def nonlinearity(x):
+#     _as = r['as']
+#     x2 = tseries.terasvirta_test(_as.ts(x), type='Chisq')
+#     pass
+# print(stl_features(ts['close']))
+
+
+import pandas as pd
+import numpy as np
+from itertools import product
+
+
+def get_pattern(vector, pattern_size):
+    n = len(vector)
+    vector[vector==0] = 1
+    vector[vector==-1] = 0
+    tmp = {}
+    for i in range(pattern_size):
+        tmp['p_' + str(i)] = vector[i:(n-pattern_size+i+1)]
+    if pattern_size == 5:
+        return tmp['p_0']*16 + tmp['p_1']*8 + tmp['p_2']*4 + tmp['p_3']*2 + tmp['p_4']
+    elif pattern_size == 2:
+        return tmp['p_0']*2 + tmp['p_1']
+
+
+def get_entropy(df, stride=1, time_window_len=90):
+
+    unique_dates = df.barTimestamp.unique()
+    num_days = len(unique_dates)
+    patt_ent = np.zeros(num_days)
+    all_comb = len(list(product([1, 0], repeat=stride)))
+
+    for i in range(all_comb):
+        df['patt_{}'.format(str(i))] = np.cumsum(df.pattern == i)
+    for i in range(num_days):
+
+        if i >= (time_window_len-1):
+            counter = np.linspace(0.01, 0.01, all_comb)
+            bottom = i - time_window_len + 1
+            if stride == 1:
+                for pat in range(all_comb):
+                    counter[pat] = counter[pat] + (df['patt_{}'.format(str(pat))][i:(i+1)]).values[0] -\
+                                   df['patt_{}'.format(str(pat))][bottom:(bottom+1)].values[0]
+            if stride != 1:
+                df_cp = df.copy()
+                df_cp = df_cp.iloc[bottom:(i+1):stride]
+                for pat in range(all_comb):
+                    counter[pat] = counter[pat] + len(df_cp[df_cp.pattern == pat])
+
+            sum_patterns = sum(counter)
+            probs = counter / sum_patterns
+            patt_ent[i] = sum(-np.log2(probs) * probs)
+
+    entropy_df = pd.DataFrame({'barTimestamp': unique_dates, 'patt_entropy_dep': patt_ent})
+
+    return entropy_df
+
+path = ''
+stock_name = 'gbpusd_daily'
+patt_size = 5
+#
+data = pd.read_csv(path + stock_name + '.csv')
+data = data[['barTimestamp', 'close']]
+data.barTimestamp = pd.to_datetime(data.barTimestamp)
+data['label'] = np.sign(data.close - data.close.shift(1))
+data = data.dropna().reset_index(drop=True)
+
+patterns = get_pattern(data.label.values, patt_size)
+data = data[(patt_size-1)::].reset_index(drop=True)
+data['pattern'] = patterns
+
+entropy = get_entropy(data, stride=patt_size)
