@@ -15,6 +15,9 @@ from rpy2.robjects.packages import importr
 stats = packages.importr('stats')
 tseries = packages.importr('tseries')
 forecast = packages.importr('forecast')
+foreCA = packages.importr('ForeCA')
+fracdiff = packages.importr('fracdiff')
+urca = packages.importr('urca')
 base = importr('base')
 # _as = importr('as.ts')
 from rpy2.robjects.packages import STAP
@@ -83,11 +86,14 @@ def pacf_features(x):
 # }
 
 def holt_parameters(x):
-    from statsmodels.tsa.holtwinters import ExponentialSmoothing
-    print(x)
-    ets_model = ExponentialSmoothing(x, trend='add')#, seasonal='None')
-    ets_fit = ets_model.fit()
-    alpha, beta = ets_fit.params['smoothing_level'], ets_fit.params['smoothing_slope']
+    # from statsmodels.tsa.holtwinters import ExponentialSmoothing
+    # print(x)
+    # ets_model = ExponentialSmoothing(x, trend='add')#, seasonal='None')
+    # ets_fit = ets_model.fit()
+    # alpha, beta = ets_fit.params['smoothing_level'], ets_fit.params['smoothing_slope']
+    fit = forecast.ets(x, model='AAN')
+    alpha = fit.rx2('par')[0]
+    beta = fit.rx2('par')[1]
     return alpha, beta
 
 
@@ -111,6 +117,10 @@ def entropy(x):
 # print(acf_features(ts['close']))
 # print(pacf_features(ts['close']))
 
+def entropy_from_r(x):
+    entropy = foreCA.spectral_entropy(x)[0]
+    return entropy
+
 def scale_ts(x):
     std = np.std(x)
     mean = np.mean(x)
@@ -120,6 +130,7 @@ def scale_ts(x):
 def lumpiness(x):
     width = 10
     x = scale_ts(x)
+    print(x)
     nr = len(x)
     lo = [i for i in range(0, nr, width)]
     up = [i for i in range(width, nr + width, width)]
@@ -164,18 +175,24 @@ def flat_spots(x):
     return flatspots
 
 def kpss(x):
-    return statsmodels.tsa.stattools.kpss(x)[0]
+    # _kpss = 0
+    _kpss = urca.ur_kpss(x)
+    # return statsmodels.tsa.stattools.kpss(x)[0]
+    return _kpss.slots['teststat'][0]
 
 def pp(x):
-    p = PhillipsPerron(x)
-    return p._stat_rho + p._stat_tau
+    # p = PhillipsPerron(x)
+    # return p._stat_rho + p._stat_tau
+    _pp = urca.ur_pp(x)
+    return _pp.slots['teststat'][0]
 
 def hurst_coeff(x):
     h, C, data = hurst.compute_Hc(x)
-    return h + 0.5
-
-import pyper
-from pyper import *
+    result = fracdiff.fracdiff(x, 0, 0)
+    _hurst_coeff = result.rx2('d')[0] + 0.5
+    return _hurst_coeff
+# import pyper
+# from pyper import *
 
 
 def arch_stat(x, lags=12, demean=True):
@@ -185,24 +202,24 @@ def arch_stat(x, lags=12, demean=True):
     mat = embed(FloatVector(x ** 2), lags + 1)
     fmla = Formula('y ~ x')
     env = fmla.environment
-    env['x'] = mat[:, 1:]
-    env['y'] = mat[:, 0]
+    env['x'] = np.asarray(mat)[:, 1:]
+    env['y'] = np.asarray(mat)[:, 0]
     fit = stats.lm(fmla)
     modsum = base.summary(fit)
-    rsquared = modsum.rx2('r.squared')
+    rsquared = modsum.rx2('r.squared')[0]
     arch_lm = rsquared
     return arch_lm
 
 def heterogeneity(x):
     x_archtest = arch_stat(x)
-    arch_r2 = x_archtest[0]
+    arch_r2 = x_archtest
     LBstat = sum(sm.tsa.stattools.acf(x**2, nlags=12, missing='none')[1:]**2)
     arch_acf = LBstat
     garch_fit = tseries.garch(x, trace=False)
     residuals = r['residuals']
-    garch_fit_std = residuals(garch_fit)[1:]
+    garch_fit_std = np.array(residuals(garch_fit)[1:])
     x_garch_archtest = arch_stat(garch_fit_std)
-    garch_r2 = x_garch_archtest[0]
+    garch_r2 = x_garch_archtest
     LBstat2 = sum(sm.tsa.stattools.acf(garch_fit_std**2, nlags=12, missing='none')[1:]**2)
     garch_acf = LBstat2
     return arch_acf, garch_acf, arch_r2, garch_r2
@@ -221,7 +238,7 @@ def stl_features(x):
     trend, spike, linearity, curvature, e_acf1, e_acf10 = 0, 0, 0, 0, 0, 0
     msts = 0
     nperiods = 0
-    stlfit = forecast.mstl(x)
+    stlfit = np.array(forecast.mstl(x))
     # stlfit = sm.tsa.seasonal_decompose(x, freq=1, model='additive')
     trend0 = stlfit[:,1]
     remainder = stlfit[:,2]
@@ -254,8 +271,8 @@ def stl_features(x):
     fit = stats.lm(fmla)
     coef = r['coef']
     fit = coef(fit)
-    linearity = fit[0]
-    curvature = fit[1]
+    linearity = fit[1]
+    curvature = fit[0]
     return trend, spike, e_acf1, e_acf10, linearity, curvature
 
-print(hurst_coeff(ts['close']))
+print(pp(ts['close']))
